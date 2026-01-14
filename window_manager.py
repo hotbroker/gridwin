@@ -1,8 +1,23 @@
+import win32api
+import win32con
+import win32gui
 import win32process
 import os
-import win32gui
-import win32con
-import win32api
+import ctypes
+from ctypes import wintypes
+
+def get_window_exe_path(hwnd):
+    """
+    Gets the executable path for the process that owns the window.
+    """
+    try:
+        _, pid = win32process.GetWindowThreadProcessId(hwnd)
+        handle = win32api.OpenProcess(win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False, pid)
+        path = win32process.GetModuleFileNameEx(handle, 0)
+        win32api.CloseHandle(handle)
+        return path
+    except Exception:
+        return None
 
 def list_visible_windows():
     """
@@ -43,22 +58,24 @@ def list_visible_windows():
     win32gui.EnumWindows(enum_handler, None)
     return windows
 
-def get_window_exe_path(hwnd):
+def get_window_rect_actual(hwnd):
     """
-    Gets the executable path for the process that owns the window.
+    获取窗口的实际可见矩形（排除 Win10/11 的不可见阴影边框）
     """
+    rect = win32gui.GetWindowRect(hwnd)
     try:
-        _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        handle = win32api.OpenProcess(win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False, pid)
-        path = win32process.GetModuleFileNameEx(handle, 0)
-        win32api.CloseHandle(handle)
-        return path
+        # DWMWA_EXTENDED_FRAME_BOUNDS = 9
+        actual_rect = wintypes.RECT()
+        ctypes.windll.dwmapi.DwmGetWindowAttribute(
+            hwnd, 9, ctypes.byref(actual_rect), ctypes.sizeof(actual_rect)
+        )
+        return (actual_rect.left, actual_rect.top, actual_rect.right, actual_rect.bottom)
     except Exception:
-        return None
+        return rect
 
-def tile_windows(hwnds, rows, cols):
+def tile_windows(hwnds, rows, cols, compact=False):
     """
-    Tiles the given windows into a grid on the primary monitor.
+    将窗口排列成网格。如果 compact 为 True，则尝试消除系统阴影导致的间隙。
     """
     if not hwnds:
         return
@@ -84,15 +101,32 @@ def tile_windows(hwnds, rows, cols):
 
         x = wa_left + col * cell_width
         y = wa_top + row * cell_height
+        w, h = cell_width, cell_height
+
+        if compact:
+            # 计算偏移逻辑：
+            # 实际位置 = 目标位置 - (实际边界.left - 窗口边界.left)
+            full_rect = win32gui.GetWindowRect(hwnd)
+            actual_rect = get_window_rect_actual(hwnd)
+            
+            offset_l = actual_rect[0] - full_rect[0]
+            offset_t = actual_rect[1] - full_rect[1]
+            offset_r = full_rect[2] - actual_rect[2]
+            offset_b = full_rect[3] - actual_rect[3]
+            
+            x -= offset_l
+            y -= offset_t
+            w += (offset_l + offset_r)
+            h += (offset_t + offset_b)
 
         # Use SetWindowPos to move and bring to top
-        # HWND_TOP: Brings the window to the top of the Z order.
         if win32gui.IsIconic(hwnd):
             win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
         
         flags = win32con.SWP_SHOWWINDOW
-        win32gui.SetWindowPos(hwnd, win32con.HWND_TOP, x, y, cell_width, cell_height, flags)
+        win32gui.SetWindowPos(hwnd, win32con.HWND_TOP, x, y, w, h, flags)
         
-        # Additionally force to foreground to ensure it's active if desired, 
-        # but HWND_TOP should be enough for visibility.
-        win32gui.SetForegroundWindow(hwnd)
+        try:
+            win32gui.SetForegroundWindow(hwnd)
+        except Exception:
+            pass

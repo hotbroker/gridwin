@@ -2,7 +2,7 @@ import sys
 import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QListWidget, QListWidgetItem, QPushButton, 
-                             QLabel, QSpinBox, QMessageBox, QFileIconProvider)
+                             QLabel, QSpinBox, QMessageBox, QFileIconProvider, QCheckBox)
 from PySide6.QtCore import Qt, QFileInfo
 from PySide6.QtGui import QIcon, QPixmap
 import window_manager
@@ -16,7 +16,7 @@ def resource_path(relative_path):
 class GridWinApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("GridWin - 窗口网格排列工具(surewin.chau@hotmail.com)")
+        self.setWindowTitle("GridWin万一吧吧alpha专用版 - 窗口网格排列工具(surewin.chau@hotmail.com)")
         self.resize(700, 500)
         
         # Set Application Icon
@@ -55,6 +55,12 @@ class GridWinApp(QMainWindow):
         self.cols_spin.setRange(1, 10)
         self.cols_spin.setValue(2)
         controls_layout.addWidget(self.cols_spin)
+
+        # Compact option
+        self.compact_check = QCheckBox("紧贴排列 (消除间隙)")
+        self.compact_check.setToolTip("选中后将计算窗口实际边界，消除 Windows 系统由于窗口阴影产生的排列缝隙")
+        self.compact_check.setChecked(True)
+        controls_layout.addWidget(self.compact_check)
 
         controls_layout.addStretch()
 
@@ -102,6 +108,7 @@ class GridWinApp(QMainWindow):
         hwnds = [item.data(Qt.UserRole) for item in selected_items]
         rows = self.rows_spin.value()
         cols = self.cols_spin.value()
+        compact = self.compact_check.isChecked()
         grid_capacity = rows * cols
 
         if len(hwnds) > grid_capacity:
@@ -116,7 +123,7 @@ class GridWinApp(QMainWindow):
             if reply == QMessageBox.No:
                 return
 
-        window_manager.tile_windows(hwnds, rows, cols)
+        window_manager.tile_windows(hwnds, rows, cols, compact=compact)
 
 
 
